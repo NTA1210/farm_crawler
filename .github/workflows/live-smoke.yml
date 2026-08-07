@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     env:
-      DATABASE_PATH: :memory:
+      DATABASE_PATH: ":memory:"
       STORAGE_DRIVER: local
       DOWNLOAD_IMAGES: "false"
       RESPECT_ROBOTS_TXT: "true"
