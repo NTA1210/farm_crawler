@@ -73,6 +73,7 @@ async function main() {
         downloadImages: toBoolean(flags['download-images'], config.crawler.downloadImages),
       });
       console.log(JSON.stringify(result, null, 2));
+      if (result.status === 'FAILED') process.exitCode = 1;
     }
   } else if (command === 'images') {
     const limit = Math.min(1000, Number(flags.limit || 100));
