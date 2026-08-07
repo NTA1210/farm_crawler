@@ -21,9 +21,9 @@ function transformDocument(_document, returnedObject) {
 /**
  * Create the Supplier model on the provided connection.
  *
- * A factory is used instead of the global `mongoose.model()` registry so tests
- * and CLI commands can create isolated MongoDB connections without triggering
- * `OverwriteModelError`.
+ * Supplier is the aggregate root for products, evidence and images. A factory is
+ * used instead of the global `mongoose.model()` registry so tests and CLI commands
+ * can create isolated connections without `OverwriteModelError`.
  *
  * @param {import('mongoose').Connection} connection Active MongoDB connection.
  * @returns {import('mongoose').Model} Supplier model bound to the connection.
@@ -90,10 +90,16 @@ function createSupplierModel(connection) {
   supplierSchema.index({ emails: 1 }, { name: 'supplier_emails' });
   supplierSchema.index({ phones: 1 }, { name: 'supplier_phones' });
   supplierSchema.index({ normalizedName: 1, province: 1 }, { name: 'supplier_name_province' });
-  supplierSchema.index({ province: 1, groups: 1, environments: 1 }, { name: 'supplier_filters' });
+
+  // MongoDB cannot create one compound index containing two array fields because
+  // that would be a parallel-arrays multikey index. Separate indexes support the
+  // same API filters safely.
+  supplierSchema.index({ province: 1, groups: 1 }, { name: 'supplier_province_groups' });
+  supplierSchema.index({ province: 1, environments: 1 }, { name: 'supplier_province_environments' });
+  supplierSchema.index({ cropNames: 1 }, { name: 'supplier_crop_names' });
   supplierSchema.index({ updatedAt: -1 }, { name: 'supplier_updated_at' });
 
-  // The text index helps future search endpoints without changing the schema.
+  // The text index helps search endpoints without changing the schema.
   supplierSchema.index(
     { legalName: 'text', tradeName: 'text', description: 'text', address: 'text' },
     { name: 'supplier_text_search', default_language: 'none' },

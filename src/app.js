@@ -178,14 +178,14 @@ function createApp({ config, store, registry, imageService, logger }) {
    *       - in: query
    *         name: productGroup
    *         schema: { type: string, enum: [SEED, EQUIPMENT, FERTILIZER] }
-   *         description: `group` is accepted as an alias.
+   *         description: The group query parameter is accepted as an alias.
    *       - in: query
    *         name: environment
    *         schema: { type: string, enum: [INDOOR, OUTDOOR, GREENHOUSE, MULTI_ENVIRONMENT] }
    *       - in: query
    *         name: cropName
    *         schema: { type: string }
-   *         description: `crop` is accepted as an alias.
+   *         description: The crop query parameter is accepted as an alias.
    *       - in: query
    *         name: province
    *         schema: { type: string }
@@ -291,7 +291,7 @@ function createApp({ config, store, registry, imageService, logger }) {
    *         name: source
    *         required: true
    *         schema: { type: string, example: ppd-seeds }
-   *         description: Registered source key or `all`.
+   *         description: Registered source key or all.
    *     requestBody:
    *       required: false
    *       content:
