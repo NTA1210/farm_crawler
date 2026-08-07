@@ -1,0 +1,212 @@
+name: Verify MongoDB and Swagger refactor
+
+on:
+  push:
+    branches:
+      - feature/agriculture-supplier-crawler
+    paths:
+      - .github/workflows/verify-mongodb-refactor.yml
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  verify-and-finalize:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NODE_ENV: test
+      MONGODB_URI: mongodb://127.0.0.1:27017/farm_crawler_verify
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/agriculture-supplier-crawler
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Re-materialize canonical prepared files
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch_blob() {
+            local sha="$1"
+            local destination="$2"
+            mkdir -p "$(dirname "$destination")"
+            gh api "repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" --jq .content \
+              | tr -d '\n' | base64 --decode > "$destination"
+            test "$(git hash-object "$destination")" = "$sha"
+          }
+
+          fetch_blob cc5ddc18b790b9618bc57ca53cb8dc7283aa6bf9 .env.example
+          fetch_blob 043de26c4456531cb9073bb868eacbe08a389a05 Dockerfile
+          fetch_blob 812998caf2e65ee2e5e3081eb71bbca4171d5100 README.md
+          fetch_blob 6fc6415123bf313224531141e0fe29b208df1392 docker-compose.yml
+          fetch_blob 1f65dc96c0cb8d9e15ccd08a90191aea380e9c8e package.json
+          fetch_blob 518ec87908cff2a4c0daddbb82675b5eb8f2ac32 src/app.js
+          fetch_blob 282c256c62dabd972f25f5d4cffa862aefe2f5f9 src/config.js
+          fetch_blob bb5564711261bc9544568d6941683a31234cb1e4 src/core.js
+          fetch_blob 8347ee9eff6c5f47ca81cfaef08df21a90290b8a src/http.js
+          fetch_blob 1f7a0c925aa0539240539e79a609c630ed4a6b6f src/images.js
+          fetch_blob 657f9cd897b33a7624cd4c910efb28a79422b497 src/index.js
+          fetch_blob 7a617fad5bad3451acc69d2484d4354217fc8008 src/policy.js
+          fetch_blob 95d15a9d23be3405385c125a4b25d2cf13ee4a25 src/storage.js
+          fetch_blob 9ed152a0807cc7ee36933680752e5ca39adcfd95 src/swagger.js
+          fetch_blob 69786307c580d11e5dee3855cb19a65b60cd8bc3 src/models/index.js
+          fetch_blob d43d0a34c3a6674d142ff4421c8adc2e7db698f3 src/models/crawl-run.model.js
+          fetch_blob 2c6b4c39cc56cf9e1d3afdb89e2a9020a5d9be31 src/models/image.model.js
+          fetch_blob 3e91bc9cdbc1b803cf64a8509f8f84c49ac1397b src/models/product.model.js
+          fetch_blob a7768d209dda2282bce296a3619768b97a5c9f0b src/models/source-evidence.model.js
+          fetch_blob 6039ee05834022cbdb09e07bcff86351f7993304 src/models/supplier.model.js
+          fetch_blob ab5aacbe099c7c3a01cd5feeb40f26f5a2d2b621 test/store.test.js
+          fetch_blob 81ad99567a033c9afa4c5a31a99d3320a6e247bc test/swagger.test.js
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate all JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find src test -type f -name '*.js' -print0)
+
+      - name: Run MongoDB integration and Swagger tests
+        run: npm test
+
+      - name: Finalize workflows and remove temporary automation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .github/workflows/ci.yml <<'EOF'
+          name: CI
+
+          on:
+            push:
+              branches: [main, feature/agriculture-supplier-crawler]
+            pull_request:
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              services:
+                mongodb:
+                  image: mongo:8
+                  ports:
+                    - 27017:27017
+                  options: >-
+                    --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 12
+              env:
+                NODE_ENV: test
+                MONGODB_URI: mongodb://127.0.0.1:27017/farm_crawler_ci
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-node@v4
+                  with:
+                    node-version: 20
+                    cache: npm
+                - run: npm ci
+                - name: Validate every JavaScript file
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    while IFS= read -r -d '' file; do
+                      node --check "$file"
+                    done < <(find src test -type f -name '*.js' -print0)
+                - run: npm test
+          EOF
+
+          cat > .github/workflows/live-smoke.yml <<'EOF'
+          name: Live source smoke
+
+          on:
+            workflow_dispatch:
+              inputs:
+                source:
+                  description: Registered crawler source
+                  required: true
+                  default: ppd-seeds
+                max_pages:
+                  description: Maximum pages
+                  required: true
+                  default: '1'
+
+          permissions:
+            contents: read
+
+          jobs:
+            crawl:
+              runs-on: ubuntu-latest
+              services:
+                mongodb:
+                  image: mongo:8
+                  ports:
+                    - 27017:27017
+                  options: >-
+                    --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 12
+              env:
+                NODE_ENV: test
+                MONGODB_URI: mongodb://127.0.0.1:27017/farm_crawler_live_smoke
+                DOWNLOAD_IMAGES: 'false'
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-node@v4
+                  with:
+                    node-version: 20
+                    cache: npm
+                - run: npm ci
+                - run: npm run db:init
+                - run: npm run crawl -- "${{ inputs.source }}" --max-pages="${{ inputs.max_pages }}" --download-images=false
+          EOF
+
+          rm -f .github/workflows/apply-mongodb-refactor.yml
+          rm -f .github/workflows/verify-mongodb-refactor.yml
+
+      - name: Commit validated result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "refactor: migrate persistence to MongoDB and add Swagger"
+            git push origin HEAD:feature/agriculture-supplier-crawler
+          fi
+
+      - name: Report successful validation on pull request
+        run: |
+          gh pr comment 1 --repo "$GITHUB_REPOSITORY" --body "✅ MongoDB/Mongoose migration and Swagger/OpenAPI documentation were validated in GitHub Actions. All JavaScript syntax checks and the MongoDB integration/Swagger test suite passed."
+
+      - name: Dispatch canonical CI
+        continue-on-error: true
+        run: gh workflow run ci.yml --ref feature/agriculture-supplier-crawler
