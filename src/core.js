@@ -66,11 +66,20 @@ function normalizeEmail(value = '') {
 }
 
 function normalizeWebsite(value = '', baseUrl) {
-  if (!value) return null;
+  const raw = cleanText(value);
+  if (!raw) return null;
   try {
-    const prepared = /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`;
-    const url = new URL(prepared, baseUrl);
+    const hasProtocol = /^[a-z][a-z\d+.-]*:/i.test(raw);
+    const looksLikeDomain = /^(?:www\.)?[a-z\d.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(raw);
+    const prepared = hasProtocol
+      ? raw
+      : baseUrl && !looksLikeDomain
+        ? new URL(raw, baseUrl).toString()
+        : `https://${raw}`;
+    const url = new URL(prepared);
     if (!['http:', 'https:'].includes(url.protocol)) return null;
+    url.username = '';
+    url.password = '';
     url.hash = '';
     ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'].forEach((key) => url.searchParams.delete(key));
     url.hostname = url.hostname.toLowerCase();
