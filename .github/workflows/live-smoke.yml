@@ -1,0 +1,65 @@
+name: Live source smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: Maximum pages per source
+        required: false
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  crawl-live-sources:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://127.0.0.1:27017/farm_crawler_live_smoke
+      MONGODB_AUTO_INDEX: "true"
+      STORAGE_DRIVER: local
+      DOWNLOAD_IMAGES: "false"
+      RESPECT_ROBOTS_TXT: "true"
+      CRAWLER_DELAY_MS: "1000"
+      LOG_LEVEL: info
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+
+      - name: Smoke test official PPD seed records
+        continue-on-error: true
+        shell: bash
+        run: |
+          node src/index.js crawl ppd-seeds \
+            --max-pages="${{ inputs.max_pages }}" \
+            --dry-run=true \
+            --download-images=false | tee /tmp/ppd-smoke.log
+          grep -Eq '"found": [1-9][0-9]*' /tmp/ppd-smoke.log
+
+      - name: Smoke test Agri Vietnam
+        continue-on-error: true
+        run: >-
+          node src/index.js crawl agri-vietnam
+          --max-pages=1
+          --dry-run=true
+          --download-images=false

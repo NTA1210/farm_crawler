@@ -1,0 +1,32 @@
+{
+  "name": "farm-crawler",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Node.js crawler and API for Vietnamese agriculture suppliers, products, logos and source evidence.",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch src/index.js serve",
+    "start": "node src/index.js serve",
+    "db:init": "node src/index.js db:init",
+    "sources": "node src/index.js sources",
+    "crawl": "node src/index.js crawl",
+    "crawl:all": "node src/index.js crawl all",
+    "images:enrich": "node src/index.js images",
+    "check": "node scripts/check.js",
+    "test": "node --test --test-concurrency=1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.850.0",
+    "cheerio": "^1.1.0",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "mongoose": "^9.8.0",
+    "pino": "^9.7.0",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}
