@@ -61,7 +61,6 @@ const config = Object.freeze({
     agri: process.env.AGRI_VIETNAM_START_URL || 'https://agri-vietnam.com.vn/exhibitor-list-2026/',
     hortex: process.env.HORTEX_START_URL || 'https://hortex-exhibitions.com/visiting/',
     ppdSeeds: list('PPD_SEEDS_START_URLS', [
-      'https://ppd.gov.vn/luu-hanh-giong-cay-trong.html',
       'https://www.ppd.gov.vn/tin-moi-nhat-289/danh-sach-giong-cay-trong-cac-loai-duoc-cong-nhan-chinh-thuc-cap-quyet-dinh-luu-hanh.html',
     ]),
     ppdFertilizers: process.env.PPD_FERTILIZERS_START_URL || 'https://www.ppd.gov.vn/ds-co-so-san-xuat-phan-bon-duoc-cap-giay-chung-nhan-du-dieu-kien.html',
