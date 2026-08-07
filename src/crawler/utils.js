@@ -9,14 +9,24 @@ const {
   sha256,
 } = require('../core');
 
-/**
- * Return the first non-empty text found by a list of selectors.
- *
- * @param {import('cheerio').CheerioAPI} $ Cheerio API.
- * @param {import('cheerio').Cheerio<any>} root Root element.
- * @param {string[]} selectors Selectors in priority order.
- * @returns {string} Clean text or an empty string.
- */
+// Only explicit supplier/organization columns may create the core Supplier entity.
+// Product, variety or fertilizer columns are deliberately excluded from this list.
+const SUPPLIER_HEADER_PATTERNS = Object.freeze([
+  'ten don vi',
+  'ten to chuc',
+  'ten doanh nghiep',
+  'ten co so',
+  'co so san xuat',
+  'don vi dang ky',
+  'don vi de nghi',
+  'chu so huu',
+  'to chuc dang ky',
+  'doanh nghiep',
+  'company',
+  'exhibitor',
+]);
+
+/** Return the first non-empty text found by selectors in priority order. */
 function firstText($, root, selectors) {
   for (const selector of selectors) {
     const value = cleanText(root.find(selector).first().text());
@@ -25,15 +35,7 @@ function firstText($, root, selectors) {
   return '';
 }
 
-/**
- * Return the first non-empty attribute found by a list of selectors.
- *
- * @param {import('cheerio').CheerioAPI} $ Cheerio API.
- * @param {import('cheerio').Cheerio<any>} root Root element.
- * @param {string[]} selectors Selectors in priority order.
- * @param {string} attribute Attribute name.
- * @returns {string} Attribute value or an empty string.
- */
+/** Return the first non-empty attribute found by selectors in priority order. */
 function firstAttr($, root, selectors, attribute) {
   for (const selector of selectors) {
     const value = root.find(selector).first().attr(attribute);
@@ -53,23 +55,19 @@ function extractPhone(text = '') {
 }
 
 /**
- * Reject table headers and obviously invalid company names before persistence.
+ * Reject table headers, placeholders and obviously invalid supplier names.
  *
- * @param {string} name Candidate company name.
- * @returns {boolean} Whether the value is usable.
+ * @param {string} name Candidate supplier/company name.
+ * @returns {boolean} Whether the value can identify the core Supplier entity.
  */
 function isLikelyCompany(name = '') {
   const key = normalizeKey(name);
   if (key.length < 3 || key.length > 220) return false;
-  return !/^(stt|no|ten doanh nghiep|ten don vi|company|exhibitor|san pham|dia chi|website|email|dien thoai)$/.test(key);
+
+  return !/^(stt|no|ten doanh nghiep|ten don vi|ten to chuc|ten co so|company|exhibitor|san pham|ten san pham|ten giong|giong cay|phan bon|dia chi|website|email|dien thoai|unknown|unknown supplier|no supplier|n a|khong ro|khong co|chua xac dinh)$/.test(key);
 }
 
-/**
- * Convert every HTML table row to a generic structure shared by source parsers.
- *
- * @param {import('cheerio').CheerioAPI} $ Cheerio API.
- * @returns {{headers: string[], cells: string[], links: string[], images: string[], text: string}[]} Parsed rows.
- */
+/** Convert every HTML table row to a generic structure shared by source parsers. */
 function rowsFromTables($) {
   const rows = [];
 
@@ -80,13 +78,21 @@ function rowsFromTables($) {
     });
 
     $(table).find('tr').slice(1).each((__, tableRow) => {
-      const cells = $(tableRow).find('td,th').map((___, cell) => cleanText($(cell).text())).get();
+      const cells = $(tableRow).find('td,th')
+        .map((___, cell) => cleanText($(cell).text()))
+        .get();
       if (!cells.some(Boolean)) return;
 
-      const links = $(tableRow).find('a[href]').map((___, anchor) => $(anchor).attr('href')).get();
-      const images = $(tableRow).find('img').map((___, image) => (
-        $(image).attr('src') || $(image).attr('data-src') || $(image).attr('data-lazy-src')
-      )).get();
+      const links = $(tableRow).find('a[href]')
+        .map((___, anchor) => $(anchor).attr('href'))
+        .get();
+      const images = $(tableRow).find('img')
+        .map((___, image) => (
+          $(image).attr('src')
+          || $(image).attr('data-src')
+          || $(image).attr('data-lazy-src')
+        ))
+        .get();
 
       rows.push({
         headers,
@@ -101,28 +107,38 @@ function rowsFromTables($) {
   return rows;
 }
 
-/**
- * Read a table cell by flexible normalized header fragments.
- *
- * @param {{headers: string[], cells: string[]}} row Generic row.
- * @param {string[]} patterns Accepted header fragments.
- * @param {number} fallbackIndex Fallback column index or -1.
- * @returns {string} Cell value.
- */
+/** Read a table cell by flexible normalized header fragments. */
 function cellByHeader(row, patterns, fallbackIndex = -1) {
-  const index = row.headers.findIndex((header) => patterns.some((pattern) => header.includes(pattern)));
+  const index = row.headers.findIndex((header) => (
+    patterns.some((pattern) => header.includes(pattern))
+  ));
   if (index >= 0) return row.cells[index] || '';
   return fallbackIndex >= 0 ? row.cells[fallbackIndex] || '' : '';
 }
 
 /**
- * Build the normalized record contract expected by `Store.saveRecord`.
+ * Read the supplier name only from an explicitly supplier-related column.
  *
- * Classification is calculated from supplier and product text. Source evidence keeps
- * the original parsed row so later parser changes remain auditable.
+ * No positional fallback is allowed here. Without this rule a table such as
+ * `STT | Tên giống | Quyết định` could incorrectly create a Supplier whose name is
+ * actually a plant variety.
+ *
+ * @param {{headers: string[], cells: string[]}} row Generic table row.
+ * @returns {string} Supplier name or an empty string when the source does not expose one.
+ */
+function supplierNameByHeader(row) {
+  const index = row.headers.findIndex((header) => (
+    SUPPLIER_HEADER_PATTERNS.some((pattern) => header.includes(pattern))
+  ));
+  return index >= 0 ? cleanText(row.cells[index]) : '';
+}
+
+/**
+ * Build the normalized supplier-rooted record expected by `Store.saveRecord`.
  *
  * @param {Record<string, any>} input Record parts.
  * @returns {Record<string, any>} Complete crawler record.
+ * @throws {Error} When the parser tries to create an orphan product/evidence record.
  */
 function makeRecord({
   sourceName,
@@ -134,6 +150,10 @@ function makeRecord({
   product = null,
   confidence = 0.45,
 }) {
+  if (!supplier || !isLikelyCompany(supplier.legalName || supplier.tradeName)) {
+    throw new Error(`Supplier is required for source record: ${sourceName}`);
+  }
+
   const text = [
     supplier.legalName,
     supplier.description,
@@ -174,28 +194,27 @@ function makeRecord({
 }
 
 /**
- * Convert one generic official registry row to a supplier/product record.
+ * Convert one official registry row to a supplier/product record.
+ *
+ * The row is skipped when the registry does not expose a valid supplier. This is
+ * intentional: Supplier is the aggregate root and the crawler never invents an
+ * `UNKNOWN` supplier for an otherwise valid variety or fertilizer row.
  *
  * @param {{headers: string[], cells: string[]}} row Generic row.
  * @param {'SEED'|'FERTILIZER'} kind Official registry kind.
  * @param {Record<string, any>} context Source metadata.
- * @returns {Record<string, any>|null} Mapped record or null for invalid rows.
+ * @returns {Record<string, any>|null} Supplier-rooted record or null.
  */
 function mapOfficialRow(row, kind, context) {
   const cells = row.cells;
-  const fallbackNameIndex = cells.length > 1 && /^\d+$/.test(cells[0]) ? 1 : 0;
-  const name = cellByHeader(
-    row,
-    ['ten don vi', 'to chuc', 'doanh nghiep', 'co so', 'don vi dang ky', 'chu so huu'],
-    fallbackNameIndex,
-  );
+  const name = supplierNameByHeader(row);
   if (!isLikelyCompany(name)) return null;
 
   const address = cellByHeader(row, ['dia chi'], -1);
   const decision = cellByHeader(row, ['quyet dinh', 'so qd', 'giay chung nhan', 'so gcn'], -1);
   const productName = kind === 'SEED'
-    ? cellByHeader(row, ['ten giong', 'giong cay', 'cay trong'], cells.length > 2 ? 2 : -1)
-    : cellByHeader(row, ['san pham', 'loai phan', 'phan bon'], -1);
+    ? cellByHeader(row, ['ten giong', 'giong cay', 'cay trong'], -1)
+    : cellByHeader(row, ['ten san pham', 'san pham', 'loai phan', 'phan bon'], -1);
   const description = cleanText([productName, decision, address].filter(Boolean).join(' | '));
 
   return makeRecord({
@@ -223,6 +242,7 @@ function mapOfficialRow(row, kind, context) {
 }
 
 module.exports = {
+  SUPPLIER_HEADER_PATTERNS,
   firstText,
   firstAttr,
   extractEmail,
@@ -230,6 +250,7 @@ module.exports = {
   isLikelyCompany,
   rowsFromTables,
   cellByHeader,
+  supplierNameByHeader,
   makeRecord,
   mapOfficialRow,
 };

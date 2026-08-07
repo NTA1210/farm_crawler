@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+      - feature/agriculture-supplier-crawler
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,11 +14,41 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://127.0.0.1:27017/farm_crawler_ci
+      TEST_MONGODB_URI: mongodb://127.0.0.1:27017
+      MONGODB_AUTO_INDEX: "true"
+      STORAGE_DRIVER: local
+      DOWNLOAD_IMAGES: "false"
+      SWAGGER_ENABLED: "true"
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - run: npm run check
-      - run: npm test
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check JavaScript syntax
+        run: npm run check
+
+      - name: Run unit and MongoDB integration tests
+        run: npm test

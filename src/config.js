@@ -3,36 +3,75 @@
 require('dotenv').config();
 const path = require('node:path');
 
+/**
+ * Read a boolean environment variable with a fallback value.
+ *
+ * @param {string} name Environment variable name.
+ * @param {boolean} fallback Default when the variable is absent.
+ * @returns {boolean} Parsed value.
+ */
 function bool(name, fallback) {
   const value = process.env[name];
-  if (value == null || value === '') return fallback;
+  if (value === null || value === undefined || value === '') return fallback;
   return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
-function num(name, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+/**
+ * Read and clamp a numeric environment variable.
+ *
+ * @param {string} name Environment variable name.
+ * @param {number} fallback Default value.
+ * @param {number} minimum Inclusive minimum.
+ * @param {number} maximum Inclusive maximum.
+ * @returns {number} Safe numeric value.
+ */
+function num(name, fallback, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value)) return fallback;
-  return Math.min(max, Math.max(min, value));
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
+/**
+ * Read a comma-separated environment variable as a trimmed string array.
+ *
+ * @param {string} name Environment variable name.
+ * @param {string[]} fallback Default list.
+ * @returns {string[]} Parsed values.
+ */
 function list(name, fallback = []) {
   const value = process.env[name];
   return value ? value.split(',').map((item) => item.trim()).filter(Boolean) : fallback;
 }
 
 const cwd = process.cwd();
+const environment = process.env.NODE_ENV || 'development';
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
 
+// Central immutable configuration object shared by the API, crawlers, storage
+// service and MongoDB layer. Every secret remains in environment variables.
 const config = Object.freeze({
-  env: process.env.NODE_ENV || 'development',
+  env: environment,
   port: num('PORT', 3000, 1, 65535),
   logLevel: process.env.LOG_LEVEL || 'info',
   adminApiKey: process.env.ADMIN_API_KEY || '',
-  databasePath: process.env.DATABASE_PATH === ':memory:'
-    ? ':memory:'
-    : path.resolve(cwd, process.env.DATABASE_PATH || './data/farm-crawler.db'),
+
+  mongodb: {
+    uri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/farm_crawler',
+    dbName: process.env.MONGODB_DB_NAME || '',
+    serverSelectionTimeoutMs: num('MONGODB_SERVER_SELECTION_TIMEOUT_MS', 10000, 1000, 120000),
+    maxPoolSize: num('MONGODB_MAX_POOL_SIZE', 10, 1, 100),
+    autoIndex: bool('MONGODB_AUTO_INDEX', environment !== 'production'),
+  },
+
+  swagger: {
+    enabled: bool('SWAGGER_ENABLED', true),
+    path: process.env.SWAGGER_PATH || '/api-docs',
+    jsonPath: process.env.SWAGGER_JSON_PATH || '/api-docs.json',
+    serverUrl: process.env.SWAGGER_SERVER_URL || `http://localhost:${num('PORT', 3000, 1, 65535)}`,
+  },
+
   crawler: {
-    userAgent: process.env.CRAWLER_USER_AGENT || 'FarmCrawler/1.0 (+https://github.com/NTA1210/farm_crawler)',
+    userAgent: process.env.CRAWLER_USER_AGENT || 'FarmCrawler/1.1 (+https://github.com/NTA1210/farm_crawler)',
     delayMs: num('CRAWLER_DELAY_MS', 1500, 250, 60000),
     timeoutMs: num('CRAWLER_TIMEOUT_MS', 30000, 1000, 120000),
     maxRetries: num('CRAWLER_MAX_RETRIES', 3, 0, 8),
@@ -45,6 +84,7 @@ const config = Object.freeze({
     enrichWebsiteLogo: bool('ENRICH_PROVIDER_WEBSITE_LOGO', false),
     vietnamOnly: bool('VIETNAM_ONLY', true),
   },
+
   storage: {
     driver: (process.env.STORAGE_DRIVER || 'local').toLowerCase(),
     localDir: path.resolve(cwd, process.env.LOCAL_STORAGE_DIR || './storage'),
@@ -57,6 +97,7 @@ const config = Object.freeze({
       publicUrl: (process.env.CLOUDFLARE_R2_PUBLIC_URL || '').replace(/\/$/, ''),
     },
   },
+
   sources: {
     agri: process.env.AGRI_VIETNAM_START_URL || 'https://agri-vietnam.com.vn/exhibitor-list-2026/',
     hortex: process.env.HORTEX_START_URL || 'https://hortex-exhibitions.com/visiting/',
@@ -71,8 +112,25 @@ const config = Object.freeze({
   },
 });
 
+/**
+ * Validate configuration that cannot safely fall back at runtime.
+ *
+ * @throws {Error} When MongoDB, Swagger or R2 settings are invalid.
+ * @returns {void}
+ */
 function validateConfig() {
-  if (!['local', 'r2'].includes(config.storage.driver)) throw new Error('STORAGE_DRIVER must be local or r2');
+  if (!/^mongodb(?:\+srv)?:\/\//i.test(config.mongodb.uri)) {
+    throw new Error('MONGODB_URI must start with mongodb:// or mongodb+srv://');
+  }
+
+  if (!config.swagger.path.startsWith('/') || !config.swagger.jsonPath.startsWith('/')) {
+    throw new Error('SWAGGER_PATH and SWAGGER_JSON_PATH must start with /');
+  }
+
+  if (!['local', 'r2'].includes(config.storage.driver)) {
+    throw new Error('STORAGE_DRIVER must be local or r2');
+  }
+
   if (config.storage.driver === 'r2') {
     const missing = ['endpoint', 'accessKeyId', 'secretAccessKey', 'bucket']
       .filter((key) => !config.storage.r2[key]);
@@ -80,4 +138,4 @@ function validateConfig() {
   }
 }
 
-module.exports = { config, validateConfig };
+module.exports = { config, validateConfig, bool, num, list };
