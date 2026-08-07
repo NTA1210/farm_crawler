@@ -7,6 +7,7 @@ const { HttpClient } = require('./http');
 const { Storage } = require('./storage');
 const { ImageService } = require('./images');
 const { createRegistry, SOURCE_INFO } = require('./crawlers');
+const { applyRecordPolicy } = require('./policy');
 const { createApp } = require('./app');
 
 function parseArgs(argv) {
@@ -32,7 +33,11 @@ function build() {
   const storage = new Storage(config.storage);
   const http = new HttpClient(config.crawler, logger);
   const imageService = new ImageService({ http, storage, store, config: config.crawler, logger });
-  const registry = createRegistry({ config, http, storage, store, imageService, logger });
+  const registry = applyRecordPolicy(
+    createRegistry({ config, http, storage, store, imageService, logger }),
+    config.crawler,
+    logger,
+  );
   return { logger, store, storage, http, imageService, registry };
 }
 
