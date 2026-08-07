@@ -68,9 +68,17 @@ function createProductModel(connection) {
     { supplierId: 1, name: 1, productUrl: 1 },
     { unique: true, name: 'product_supplier_name_url_unique' },
   );
+
+  // MongoDB cannot create a compound multikey index that contains both
+  // `environments` and `cropNames` because they are independent arrays. Keep the
+  // supplier/group prefix and split the two filter paths into separate indexes.
   productSchema.index(
-    { productGroup: 1, environments: 1, cropNames: 1 },
-    { name: 'product_filters' },
+    { supplierId: 1, productGroup: 1, environments: 1 },
+    { name: 'product_supplier_group_environment' },
+  );
+  productSchema.index(
+    { supplierId: 1, productGroup: 1, cropNames: 1 },
+    { name: 'product_supplier_group_crop' },
   );
 
   return connection.model('Product', productSchema);
