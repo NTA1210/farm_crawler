@@ -1,0 +1,35 @@
+name: Live source smoke
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/live-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  crawl-live-sources:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      DATABASE_PATH: :memory:
+      STORAGE_DRIVER: local
+      DOWNLOAD_IMAGES: "false"
+      RESPECT_ROBOTS_TXT: "true"
+      CRAWLER_DELAY_MS: "1000"
+      CRAWLER_MAX_PAGES: "2"
+      LOG_LEVEL: info
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Smoke test Agri Vietnam
+        continue-on-error: true
+        run: node src/index.js crawl agri-vietnam --max-pages=1 --dry-run=true --download-images=false
+      - name: Smoke test official PPD seed records
+        continue-on-error: true
+        run: node src/index.js crawl ppd-seeds --max-pages=2 --dry-run=true --download-images=false
