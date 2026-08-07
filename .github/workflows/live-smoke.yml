@@ -5,6 +5,11 @@ on:
   push:
     paths:
       - .github/workflows/live-smoke.yml
+      - src/config.js
+      - src/crawlers.js
+      - src/http.js
+      - src/policy.js
+      - package.json
 
 permissions:
   contents: read
@@ -27,9 +32,12 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Smoke test Agri Vietnam
-        continue-on-error: true
-        run: node src/index.js crawl agri-vietnam --max-pages=1 --dry-run=true --download-images=false
       - name: Smoke test official PPD seed records
         continue-on-error: true
-        run: node src/index.js crawl ppd-seeds --max-pages=2 --dry-run=true --download-images=false
+        shell: bash
+        run: |
+          node src/index.js crawl ppd-seeds --max-pages=2 --dry-run=true --download-images=false | tee /tmp/ppd-smoke.log
+          grep -Eq '"found": [1-9][0-9]*' /tmp/ppd-smoke.log
+      - name: Smoke test Agri Vietnam (source may reject datacenter IPs)
+        continue-on-error: true
+        run: node src/index.js crawl agri-vietnam --max-pages=1 --dry-run=true --download-images=false
