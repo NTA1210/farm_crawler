@@ -23,6 +23,6 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "pino": "^9.7.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }
