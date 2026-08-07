@@ -1,0 +1,9 @@
+node_modules/
+.env
+data/*.db*
+storage/raw/**
+storage/images/**
+!storage/raw/.gitkeep
+!storage/images/.gitkeep
+npm-debug.log*
+.DS_Store
